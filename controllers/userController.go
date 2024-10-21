@@ -3,11 +3,12 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"go-awt-project/database"
-	helper "go-awt-project/helpers"
-	"go-awt-project/models"
+	"go-jwt-project/database"
+	helper "go-jwt-project/helpers"
+	"go-jwt-project/models"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -44,9 +45,9 @@ func VerifyPassword(userPassword string, providedPassword string) (bool, string)
 }
 
 func Signup() gin.HandlerFunc {
-
 	return func(c *gin.Context) {
 		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
 		var user models.User
 
 		if err := c.BindJSON(&user); err != nil {
@@ -61,7 +62,6 @@ func Signup() gin.HandlerFunc {
 		}
 
 		countWithEmail, err := userCollection.CountDocuments(ctx, bson.M{"email": user.Email})
-		defer cancel()
 		if err != nil {
 			log.Panic(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while checking email"})
@@ -72,7 +72,6 @@ func Signup() gin.HandlerFunc {
 		user.Password = &password
 
 		countWithPhone, err := userCollection.CountDocuments(ctx, bson.M{"phone": user.Phone})
-		defer cancel()
 		if err != nil {
 			log.Panic(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while checking phone number"})
@@ -97,7 +96,6 @@ func Signup() gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
 			return
 		}
-		defer cancel()
 		c.JSON(http.StatusOK, resultInsertionOne)
 	}
 }
@@ -109,7 +107,6 @@ func Login() gin.HandlerFunc {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 		defer cancel()
-
 		if err := c.BindJSON(&user); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -131,7 +128,7 @@ func Login() gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "user not found"})
 			return
 		}
-		token, refreshToken, _ := helper.GenerateAllTokens(*foundUser.Email, *foundUser.First_name, *foundUser.Last_name, *ufoundUser.User_type, *&foundUser.User_id)
+		token, refreshToken, _ := helper.GenerateAllTokens(*foundUser.Email, *foundUser.First_name, *foundUser.Last_name, *foundUser.User_type, *&foundUser.User_id)
 		helper.UpdateAllTokens(token, refreshToken, foundUser.User_id)
 		err = userCollection.FindOne(ctx, bson.M{"user_id": foundUser.User_id}).Decode(&foundUser)
 		if err != nil {
@@ -142,7 +139,57 @@ func Login() gin.HandlerFunc {
 	}
 }
 
-func GetUsers()
+func GetUsers() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if err := helper.CheckUserType(c, "ADMIN"); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
+
+		recordPerPage, err := strconv.Atoi(c.Query("recordPerPage"))
+		if err != nil || recordPerPage < 1 {
+			recordPerPage = 10
+		}
+
+		page, err1 := strconv.Atoi(c.Query("page"))
+		if err1 != nil || page < 1 {
+			page = 0
+		}
+
+		startIndex := (page - 1) * recordPerPage
+		startIndex, err = strconv.Atoi(c.Query("startIndex"))
+
+		matchStage := bson.D{{Key: "$match", Value: bson.D{}}}
+		groupStage := bson.D{
+			{Key: "$group", Value: bson.D{
+				{Key: "_id", Value: "null"}, // Change the key-value pair as per requirement
+				{Key: "total_count", Value: bson.D{{Key: "$sum", Value: 1}}},
+				{Key: "data", Value: bson.D{{Key: "$push", Value: "$$ROOT"}}},
+			}},
+		}
+		projectStage := bson.D{{
+			Key: "$project", Value: bson.D{
+				{Key: "_id", Value: 0},
+				{Key: "total_count", Value: 1},
+				{Key: "user_items", Value: bson.D{{Key: "$slice", Value: []interface{}{"$data", startIndex, recordPerPage}}}},
+			}},
+		}
+
+		result, err := userCollection.Aggregate(ctx, mongo.Pipeline{matchStage, groupStage, projectStage})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		var allUsers []bson.M
+		if err := result.All(ctx, &allUsers); err != nil {
+			log.Fatal(err)
+			return
+		}
+		c.JSON(http.StatusOK, allUsers[0])
+	}
+}
 
 func GetUser() gin.HandlerFunc {
 	return func(c *gin.Context) {

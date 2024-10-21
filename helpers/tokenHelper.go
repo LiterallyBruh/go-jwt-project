@@ -2,7 +2,7 @@ package helpers
 
 import (
 	"context"
-	"go-awt-project/database"
+	"go-jwt-project/database"
 	"log"
 	"os"
 	"time"
