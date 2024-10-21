@@ -3,13 +3,14 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"go-jwt-project/database"
-	helper "go-jwt-project/helpers"
-	"go-jwt-project/models"
 	"log"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/LiterallyBruh/go-jwt-project/database"
+	helper "github.com/LiterallyBruh/go-jwt-project/helpers"
+	"github.com/LiterallyBruh/go-jwt-project/models"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"

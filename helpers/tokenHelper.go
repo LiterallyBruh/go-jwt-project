@@ -2,10 +2,12 @@ package helpers
 
 import (
 	"context"
-	"go-jwt-project/database"
+	"fmt"
 	"log"
 	"os"
 	"time"
+
+	"github.com/LiterallyBruh/go-jwt-project/database"
 
 	"github.com/golang-jwt/jwt/v5"
 	"go.mongodb.org/mongo-driver/bson"
@@ -65,11 +67,11 @@ func UpdateAllTokens(signedToken string, signedRefreshToken string, userId strin
 
 	var updateObj primitive.D
 
-	updateObj = append(updateObj, bson.E{"token", signedToken})
-	updateObj = append(updateObj, bson.E{"refresh_token", signedRefreshToken})
+	updateObj = append(updateObj, bson.E{Key: "token", Value: signedToken})
+	updateObj = append(updateObj, bson.E{Key: "refresh_token", Value: signedRefreshToken})
 
 	Update_at, _ := time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-	updateObj = append(updateObj, bson.E{"update_at", Update_at})
+	updateObj = append(updateObj, bson.E{Key: "update_at", Value: Update_at})
 
 	upsert := true
 	filter := bson.M{"user_id": userId}
@@ -80,7 +82,7 @@ func UpdateAllTokens(signedToken string, signedRefreshToken string, userId strin
 		ctx,
 		filter,
 		bson.D{
-			{"$set", updateObj},
+			{Key: "$set", Value: updateObj},
 		},
 		&opt,
 	)
@@ -91,4 +93,31 @@ func UpdateAllTokens(signedToken string, signedRefreshToken string, userId strin
 	}
 	return
 
+}
+
+func ValidateToken(signedToken string) (claims *SignedDetails, msg string) {
+	token, err := jwt.ParseWithClaims(
+		signedToken,
+		&SignedDetails{},
+		func(t *jwt.Token) (interface{}, error) {
+			return []byte(SECRET_KEY), nil
+		},
+	)
+
+	if err != nil {
+		msg = err.Error()
+		return
+	}
+
+	claims, ok := token.Claims.(*SignedDetails)
+	if !ok {
+		msg = fmt.Sprintf("the token is invalid")
+		return
+	}
+
+	if claims.ExpiresAt.Time.Before(jwt.NewNumericDate(time.Now().Local()).Time) {
+		msg = fmt.Sprint("token is expired")
+		return
+	}
+	return claims, msg
 }
